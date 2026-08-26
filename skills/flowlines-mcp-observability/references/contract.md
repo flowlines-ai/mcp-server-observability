@@ -43,12 +43,18 @@ Clients attach analytics identity to request metadata, outside tool arguments:
   },
   "_meta": {
     "session.id": "support-session-42",
-    "user.id": "customer-17"
+    "user.id": "customer-17",
+    "user.name": "Ada Lovelace",
+    "user.email": "ada@example.com"
   }
 }
 ```
 
-`session.id` and `user.id` are analytics dimensions, not authentication claims. Never authorize from them. If the server already authenticated the request, it may emit its verified subject as `user.id` and must ignore a caller-supplied spoofed value. Do not copy `_meta` into captured arguments.
+`session.id` and the client-supplied user fields are analytics metadata, not authentication claims. Never authorize from them. If the server already authenticated the request, emit its verified subject as `user.id`, use the corresponding trusted profile for name/email, and ignore caller-supplied spoofed values. Do not copy `_meta` into captured arguments.
+
+This skill requires a non-empty `user.id` for every emitted MCP span. Use a stable, immutable application user ID that identifies the same person across sessions. Do not use an email address, display name, session ID, trace ID, or OAuth client application ID as the user ID. If the server cannot authenticate the end user, require the MCP client to provide `_meta["user.id"]`; if neither source exists, report the integration as incomplete instead of manufacturing an ID.
+
+When available from a verified authenticated profile, promote name and email to top-level span attributes `user.name` and `user.email`. Otherwise promote non-empty client metadata as untrusted analytics values, never as authorization claims. Verified values always win. Do not rely on their presence inside `_meta`: Flowlines' MCP canonicalizer reads `user.id` from MCP metadata as a compatibility path, but user name/email must exist as span attributes to participate in identity mapping.
 
 ## One span per tool execution
 
@@ -69,7 +75,9 @@ Set these attributes:
 | `gen_ai.tool.call.id` | required | fresh unique ID for this invocation |
 | `mcp.request.id` | recommended | JSON-RPC request ID as a string |
 | `session.id` | required for session association | non-empty client `_meta["session.id"]` |
-| `user.id` | optional | verified identity when available, otherwise non-empty `_meta["user.id"]` |
+| `user.id` | required by this integration | stable verified user ID, otherwise required non-empty `_meta["user.id"]` promoted to the span |
+| `user.name` | required when available | verified display name, otherwise client-supplied analytics value, promoted to the span |
+| `user.email` | required when available | verified email, otherwise client-supplied analytics value, promoted to the span |
 
 The call ID identifies an invocation. It may remain stable only when retrying export of that same span. Never derive it solely from `mcp.request.id`; clients may reuse JSON-RPC IDs across stateless requests.
 
@@ -82,6 +90,51 @@ Useful optional client attributes are:
 - `flowlines.auth.client_id` from a verified OAuth client identifier.
 
 Keep OAuth client identity separate from the user-facing host name. Propagate incoming W3C trace context when available. Client and server spans carrying the same trace and call ID can be correlated by Flowlines.
+
+## Flowlines user mapping
+
+Flowlines canonicalizes the exact `user.id` span attribute into `flowlines.mcp.user_id`, which associates the MCP call and normalized session with that user. No other user-ID alias is accepted by the MCP adapter, so always emit `user.id` even if the target also uses a vendor-specific field.
+
+Name and email remain standard observed span attributes. Flowlines user identity fields are empty until they are explicitly mapped. When the canonical MCP span carries a real caller agent identity and that agent is configured in Flowlines, configure its users mapping as follows:
+
+```json
+{
+  "userIdAttribute": "user.id",
+  "identityFields": {
+    "name": {
+      "fieldId": "name",
+      "name": "Name",
+      "attributeKey": "user.name"
+    },
+    "email": {
+      "fieldId": "email",
+      "name": "Email",
+      "attributeKey": "user.email"
+    },
+    "location": null,
+    "customFields": []
+  }
+}
+```
+
+Use the equivalent fields in the Flowlines UI when mappings are configured interactively. A standalone server-side MCP span may be agentless; do not set the server name as a caller agent merely to unlock this mapping. When Flowlines exposes namespace-level identifier mapping for that telemetry, use the equivalent mapping:
+
+```json
+{
+  "ingestion": {
+    "identifiers": {
+      "sessionId": "session.id",
+      "userId": "user.id",
+      "custom": {
+        "user.name": "user.name",
+        "user.email": "user.email"
+      }
+    }
+  }
+}
+```
+
+The namespace source configuration requires the `ingestion.identifiers` nesting shown above, and `sessionId` must be present for that identifier mapping to be accepted. Do not map `user.name` or `user.email` as the user ID. After saving the applicable mapping, verify that a new test session stores the expected ID and that the user profile displays the mapped name/email. Do not assume existing sessions will be retroactively enriched. If neither a caller-agent users mapping nor a namespace identifier mapping is available, continue emitting the exact attributes but report name/email profile enrichment as unverified or unsupported; do not claim the identity is fully mapped.
 
 ## Session identity
 
@@ -126,9 +179,10 @@ Include the final-call rule in the MCP server instructions as well as the tool d
 
 After local in-memory span tests pass and live export is explicitly authorized:
 
-1. Make ten ordinary test calls carrying `reason`, `user_intent`, one stable test `session.id`, and a test `user.id`.
+1. Make ten ordinary test calls carrying `reason`, `user_intent`, one stable test `session.id`, and one stable test `user.id`; include `user.name` and `user.email` when available.
 2. Make one final `report_outcome` call in the same session.
 3. Confirm Flowlines ingestion health shows eleven matched and accepted calls with no persistent pending calls.
 4. Confirm tool name, server, success, latency, session intent, captured evidence, and reported outcome.
-5. Treat clustering as eligible only after at least 20 valid-reason calls and three distinct normalized reasons.
-6. Tool-loop detection requires three adjacent calls to the same server/tool/reason in one metadata session within ten minutes.
+5. Confirm every call and the session map to the exact test user ID, and confirm the user profile displays the mapped name/email rather than falling back to the raw ID.
+6. Treat clustering as eligible only after at least 20 valid-reason calls and three distinct normalized reasons.
+7. Tool-loop detection requires three adjacent calls to the same server/tool/reason in one metadata session within ten minutes.

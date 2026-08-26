@@ -9,7 +9,7 @@ Find or create one small adapter around the shared MCP tool dispatcher. The wrap
 - published tool name;
 - validated arguments, including `reason` and `user_intent`;
 - JSON-RPC request ID and request `_meta`;
-- authenticated user identity when the server has one;
+- a mandatory stable user ID resolved from verified authentication or required client metadata, plus verified or client-supplied name/email when available;
 - incoming trace context when the transport exposes it;
 - the final `CallToolResult` or equivalent after public error mapping.
 
@@ -38,10 +38,10 @@ attributes = {
 if _meta["session.id"] is a non-empty string:
   attributes["session.id"] = bounded value
 
-if an authenticated subject exists:
-  attributes["user.id"] = bounded verified subject
-else if _meta["user.id"] is a non-empty string:
-  attributes["user.id"] = bounded untrusted analytics value
+user = verified authenticated profile, otherwise validated client metadata
+attributes["user.id"] = bounded stable user.id
+if user.name exists: attributes["user.name"] = bounded name
+if user.email exists: attributes["user.email"] = bounded email
 
 start SERVER span "execute_tool <tool_name>"
 execute handler and public MCP error mapping
@@ -51,6 +51,8 @@ end span
 ```
 
 Exclude `_meta` from the serialized arguments. Generate the call ID independently from the request ID. Reject or omit non-serializable payloads rather than falling back to object inspection that could expose internal state.
+
+Resolve identity before entering the telemetry wrapper. Verified authentication/profile fields always win over client metadata. If the end user cannot be resolved, extend the server/client contract before declaring the integration complete; do not silently substitute an application, session, email, or generated ID. Runtime diagnostics may count a missing identity, but must remain fail-open and must not block the MCP result.
 
 ## TypeScript shape
 
@@ -79,6 +81,13 @@ type ToolExecution<T> = {
   errorType?: string;
 };
 
+type UserIdentity = {
+  id: string;
+  name?: string;
+  email?: string;
+  source: "verified" | "client_metadata";
+};
+
 export async function observeTool<T>(input: {
   tracer: Tracer;
   serverName: string;
@@ -88,7 +97,7 @@ export async function observeTool<T>(input: {
     user_intent: string;
   };
   request: ToolRequest;
-  authenticatedUserId?: string;
+  user: UserIdentity;
   parentContext?: Context;
   execute: () => Promise<ToolExecution<T>>;
 }): Promise<T> {
@@ -101,6 +110,7 @@ export async function observeTool<T>(input: {
     "mcp.method.name": "tools/call",
     "mcp.server.name": input.serverName,
     "gen_ai.tool.call.id": randomUUID(),
+    "user.id": input.user.id,
   };
 
   if (input.request.requestId !== undefined) {
@@ -108,9 +118,8 @@ export async function observeTool<T>(input: {
   }
   const sessionId = metadataString(input.request._meta, "session.id");
   if (sessionId !== undefined) attributes["session.id"] = sessionId;
-  const userId =
-    input.authenticatedUserId ?? metadataString(input.request._meta, "user.id");
-  if (userId !== undefined) attributes["user.id"] = userId;
+  if (input.user.name !== undefined) attributes["user.name"] = input.user.name;
+  if (input.user.email !== undefined) attributes["user.email"] = input.user.email;
 
   const span = input.tracer.startSpan(
     `execute_tool ${input.toolName}`,
@@ -184,6 +193,6 @@ Use the target package manager, public package entry points, exact-version rules
 
 ## Tests
 
-Use the language SDK's in-memory exporter and simple processor in unit tests. Assert the semantic contract, not the exact span implementation. Include a call whose request ID is intentionally reused and verify that two executions receive different call IDs. Include a spoofed `_meta["user.id"]` alongside a verified subject and confirm only the verified value is exported.
+Use the language SDK's in-memory exporter and simple processor in unit tests. Assert the semantic contract, not the exact span implementation. Include a call whose request ID is intentionally reused and verify that two executions receive different call IDs. Include spoofed `_meta` user ID/name/email alongside a verified profile and confirm only the verified identity is exported. Include the metadata-only path and confirm it promotes exact `user.id`, `user.name`, and `user.email` attributes without serializing `_meta` into captured arguments.
 
-Test an exception that contains a recognizable secret sentinel, map it to a public MCP error, and confirm the sentinel is absent from all attributes and events. Test shutdown separately with a fake or in-memory exporter; do not contact Flowlines from ordinary CI.
+Test an exception that contains a recognizable secret sentinel, map it to a public MCP error, and confirm the sentinel is absent from all attributes and events. Test shutdown separately with a fake or in-memory exporter; do not contact Flowlines from ordinary CI. During authorized end-to-end verification, save and verify the exact Flowlines user mapping from [contract.md](contract.md).

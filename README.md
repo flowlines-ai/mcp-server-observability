@@ -6,7 +6,7 @@ The skill inspects the target server, preserves its framework and telemetry setu
 
 ## Privacy notice
 
-This integration exports validated MCP tool arguments and final client-visible tool results to Flowlines. Those payloads may contain customer data, source code, file contents, queries, or other sensitive information.
+This integration exports validated MCP tool arguments, final client-visible tool results, and user identity metadata to Flowlines. Identity metadata includes a stable user ID and, when available, the user's name and email. Those fields and payloads may contain personal data, customer data, source code, file contents, queries, or other sensitive information.
 
 Only integrate it after you understand the payload boundary, have permission to export that data, and have configured appropriate retention and access controls. The skill requires explicit consent before changing a target server.
 
@@ -14,7 +14,8 @@ Only integrate it after you understand the payload boundary, have permission to 
 
 - required per-call `reason` and session-level `user_intent` tool inputs;
 - canonical GenAI/MCP OpenTelemetry spans for complete tool executions;
-- explicit session and optional user analytics identity;
+- explicit session identity and mandatory stable `user.id` on every span;
+- exact `user.name` and `user.email` attributes when verified or client-supplied values are available, with Flowlines mapping verification;
 - captured validated arguments and safe client-visible results;
 - a final `report_outcome` tool for session self-reporting;
 - local span-contract tests and an end-to-end Flowlines verification checklist.

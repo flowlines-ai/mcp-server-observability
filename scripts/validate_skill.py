@@ -11,6 +11,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 SKILL_DIR = ROOT / "skills" / "flowlines-mcp-observability"
 SKILL_FILE = SKILL_DIR / "SKILL.md"
+CONTRACT_FILE = SKILL_DIR / "references" / "contract.md"
 
 
 def fail(message: str) -> None:
@@ -59,6 +60,25 @@ def main() -> None:
         fail("skill description must be non-empty")
     if "TODO" in markdown or "[TODO" in markdown:
         fail("unfinished scaffold placeholder in SKILL.md")
+
+    for attribute in ("`user.id`", "`user.name`", "`user.email`"):
+        if attribute not in markdown:
+            fail(f"SKILL.md must require the exact {attribute} identity attribute")
+
+    contract = CONTRACT_FILE.read_text(encoding="utf-8")
+    for mapping_fragment in (
+        '"userIdAttribute": "user.id"',
+        '"fieldId": "name"',
+        '"attributeKey": "user.name"',
+        '"fieldId": "email"',
+        '"attributeKey": "user.email"',
+        '"sessionId": "session.id"',
+        '"userId": "user.id"',
+        '"user.name": "user.name"',
+        '"user.email": "user.email"',
+    ):
+        if mapping_fragment not in contract:
+            fail(f"contract is missing Flowlines identity mapping: {mapping_fragment}")
 
     validate_relative_links(SKILL_FILE, markdown)
     for reference in sorted((SKILL_DIR / "references").glob("*.md")):

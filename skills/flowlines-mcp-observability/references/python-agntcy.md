@@ -54,22 +54,27 @@ Call `configure_mcp_observability()` exactly once before constructing the server
 The integration must also:
 
 - add required `reason` and `user_intent` fields to every tool schema;
-- preserve `_meta["session.id"]` and optional `_meta["user.id"]` as request metadata;
+- preserve `_meta["session.id"]` as request metadata;
+- resolve a stable user ID for every call, preferring the verified authenticated subject and otherwise requiring `_meta["user.id"]`;
+- set exact `user.id`, plus `user.name` and `user.email` when verified or client-supplied values exist, on the emitted MCP span; verified profile values win;
 - register `report_outcome` with the required final-call description and server instruction;
 - map failures to a safe client-visible MCP error without exporting backend exception content;
 - uninstrument or flush during the application's bounded shutdown lifecycle when the SDK exposes that operation.
 
 ## Verify the emitted contract
 
-Do not assume that a successful import proves the installed MCP version produces the needed attributes. Add or adapt tests to exercise one complete tool call and inspect exported spans. Confirm Flowlines-recognized AGNTCY attributes identify:
+Do not assume that a successful import proves the installed MCP version produces the needed attributes. In particular, do not assume AGNTCY promotes user name/email from MCP `_meta`. Use the target server's central execution/authentication boundary to set `user.id`, `user.name`, and `user.email` on the actual AGNTCY MCP span. If the instrumentor does not expose an active span at that boundary, add the smallest compatible vanilla wrapper or hook and disable overlapping Flowlines MCP coverage so the call is not duplicated.
+
+Add or adapt tests to exercise one complete tool call and inspect exported spans. Confirm Flowlines-recognized AGNTCY attributes identify:
 
 - operation `execute_tool` and the tool name;
 - reason and user intent;
 - server identity;
 - unique invocation and request correlation;
-- explicit session identity;
+- explicit session identity and a non-empty stable `user.id`;
+- exact `user.name` and `user.email` when verified profile or client analytics values are available;
 - validated arguments and final client-visible result.
 
-Also verify that request metadata, authorization values, and raw exceptions are absent. If automatic instrumentation cannot expose a required field at the server's actual framework boundary, keep Observe for export only if it composes cleanly and add the smallest vanilla OpenTelemetry wrapper described in [vanilla-opentelemetry.md](vanilla-opentelemetry.md). Avoid duplicate spans: disable overlapping automatic coverage or make only one layer emit the Flowlines MCP span.
+Also verify that request metadata, authorization values, and raw exceptions are absent, and that a verified profile overrides spoofed client user fields. Configure the Flowlines user mapping exactly as described in [contract.md](contract.md). If automatic instrumentation cannot expose a required field at the server's actual framework boundary, keep Observe for export only if it composes cleanly and add the smallest vanilla OpenTelemetry wrapper described in [vanilla-opentelemetry.md](vanilla-opentelemetry.md). Avoid duplicate spans: disable overlapping automatic coverage or make only one layer emit the Flowlines MCP span.
 
 For a smoke check, importing, instrumenting, and uninstrumenting the installed `mcp` package must complete without error. Full acceptance still requires inspecting a real finished span and, when authorized, confirming receipt in Flowlines.
