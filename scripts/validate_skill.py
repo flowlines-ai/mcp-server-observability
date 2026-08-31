@@ -65,6 +65,20 @@ def main() -> None:
         if attribute not in markdown:
             fail(f"SKILL.md must require the exact {attribute} identity attribute")
 
+    for phrase in ("MCP-level middleware", "AddReceivingMiddleware", "on_call_tool"):
+        if phrase not in markdown:
+            fail(f"SKILL.md must prefer MCP middleware boundary: missing {phrase!r}")
+
+    vanilla = (SKILL_DIR / "references" / "vanilla-opentelemetry.md").read_text(encoding="utf-8")
+    for phrase in (
+        "MCP-level middleware",
+        "AddReceivingMiddleware",
+        "on_call_tool",
+        "HTTP, transport, or sending middleware",
+    ):
+        if phrase not in vanilla:
+            fail(f"vanilla-opentelemetry.md must prefer MCP middleware boundary: missing {phrase!r}")
+
     contract = CONTRACT_FILE.read_text(encoding="utf-8")
     for mapping_fragment in (
         '"userIdAttribute": "user.id"',

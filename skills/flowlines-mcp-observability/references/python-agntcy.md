@@ -63,7 +63,7 @@ The integration must also:
 
 ## Verify the emitted contract
 
-Do not assume that a successful import proves the installed MCP version produces the needed attributes. In particular, do not assume AGNTCY promotes user name/email from MCP `_meta`. Use the target server's central execution/authentication boundary to set `user.id`, `user.name`, and `user.email` on the actual AGNTCY MCP span. If the instrumentor does not expose an active span at that boundary, add the smallest compatible vanilla wrapper or hook and disable overlapping Flowlines MCP coverage so the call is not duplicated.
+Do not assume that a successful import proves the installed MCP version produces the needed attributes. In particular, do not assume AGNTCY promotes user name/email from MCP `_meta`. Use the target server's central execution/authentication boundary to set `user.id`, `user.name`, and `user.email` on the actual AGNTCY MCP span. If the instrumentor does not expose an active span or a required field at that boundary, fall back to the vanilla wrapper at MCP-level `tools/call` middleware or the shared dispatcher, prefer middleware when the framework has it, and disable overlapping Flowlines MCP coverage so the call is not duplicated.
 
 Add or adapt tests to exercise one complete tool call and inspect exported spans. Confirm Flowlines-recognized AGNTCY attributes identify:
 
@@ -75,6 +75,6 @@ Add or adapt tests to exercise one complete tool call and inspect exported spans
 - exact `user.name` and `user.email` when verified profile or client analytics values are available;
 - validated arguments and final client-visible result.
 
-Also verify that request metadata, authorization values, and raw exceptions are absent, and that a verified profile overrides spoofed client user fields. Configure the Flowlines user mapping exactly as described in [contract.md](contract.md). If automatic instrumentation cannot expose a required field at the server's actual framework boundary, keep Observe for export only if it composes cleanly and add the smallest vanilla OpenTelemetry wrapper described in [vanilla-opentelemetry.md](vanilla-opentelemetry.md). Avoid duplicate spans: disable overlapping automatic coverage or make only one layer emit the Flowlines MCP span.
+Also verify that request metadata, authorization values, and raw exceptions are absent, and that a verified profile overrides spoofed client user fields. Configure the Flowlines user mapping exactly as described in [contract.md](contract.md). If automatic instrumentation cannot expose a required field at the server's actual framework boundary, keep Observe for export only if it composes cleanly and add the smallest vanilla OpenTelemetry wrapper at MCP-level `tools/call` middleware or the shared dispatcher described in [vanilla-opentelemetry.md](vanilla-opentelemetry.md). Prefer middleware when the framework has it. Avoid duplicate spans: disable overlapping automatic coverage or make only one layer emit the Flowlines MCP span.
 
 For a smoke check, importing, instrumenting, and uninstrumenting the installed `mcp` package must complete without error. Full acceptance still requires inspecting a real finished span and, when authorized, confirming receipt in Flowlines.

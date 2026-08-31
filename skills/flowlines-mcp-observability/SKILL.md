@@ -25,6 +25,7 @@ Read the repository instructions, architecture documentation, and testing strate
 - language, runtime, MCP SDK and transport;
 - package manager, lockfile, dependency policies, and supported runtime versions;
 - the central tool-registration or dispatch boundary;
+- existing MCP-level middleware or interceptors;
 - existing OpenTelemetry provider, exporter, collector, propagation, and shutdown handling;
 - where validated arguments, request ID, request `_meta`, authenticated user ID/profile, final MCP result, and error mapping are available;
 - how deployment secrets and environment variables are declared without values.
@@ -35,7 +36,8 @@ Preserve the target's package manager and telemetry ownership. Reuse an existing
 
 - For a compatible Python server using the official `mcp` package, prefer AGNTCY Observe. Read [references/python-agntcy.md](references/python-agntcy.md).
 - For TypeScript or any other language with an OpenTelemetry SDK, use vanilla OpenTelemetry. Read [references/vanilla-opentelemetry.md](references/vanilla-opentelemetry.md).
-- If automatic instrumentation cannot observe the final client-visible result, validated arguments, or request metadata, add the smallest wrapper around the central tool execution boundary. Do not scatter nearly identical span code across every handler unless the framework provides no shared boundary.
+- On the vanilla path, prefer the framework's existing MCP-level middleware or interceptor at `tools/call` as the default span boundary. Typical hooks: Go `AddReceivingMiddleware`, FastMCP `on_call_tool`, official Python `server.middleware` filtered to `tools/call`, or the equivalent TypeScript hook. Do not use HTTP, transport, or sending middleware as the Flowlines MCP span boundary; resolve identity from those layers when needed, then emit the span at MCP `tools/call`.
+- If automatic instrumentation or that middleware hook cannot observe the final client-visible result, validated arguments, or request metadata, keep a single wrapper around the central tool execution boundary and capture the missing fields there. Do not scatter nearly identical span code across every handler unless the framework provides no shared boundary. Do not emit Flowlines MCP spans for `initialize`, `tools/list`, or other non-`tools/call` methods. Disable overlapping automatic coverage so each call produces one Flowlines MCP span.
 
 If the stack has neither supported AGNTCY instrumentation nor a usable OpenTelemetry SDK, explain the gap instead of inventing an unverified exporter or protocol adapter.
 
@@ -60,7 +62,7 @@ Do not change sampling for an application-wide provider without explicit approva
 
 ## Verify
 
-Add tests at the same boundary as the wrapper, using the stack's in-memory exporter when available. At minimum cover:
+Add tests at the middleware or wrapper boundary, using the stack's in-memory exporter when available. At minimum cover:
 
 - a successful call with required attributes, distinct call/request IDs, session identity, stable `user.id`, arguments, and result;
 - exact `user.name` and `user.email` span attributes for both the verified-profile path and the client-metadata fallback when those values are available;
