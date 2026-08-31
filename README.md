@@ -2,7 +2,7 @@
 
 Add Flowlines observability to an existing MCP server with a reusable coding-agent skill.
 
-The skill inspects the target server, preserves its framework and telemetry setup, and implements the Flowlines MCP contract using AGNTCY Observe for compatible Python servers or vanilla OpenTelemetry for other stacks. It does not ship a Flowlines runtime SDK or a one-size-fits-all codemod.
+The skill inspects the target server, preserves its framework and telemetry setup, and implements the Flowlines MCP contract using AGNTCY Observe for compatible Python servers or vanilla OpenTelemetry for other stacks. On the vanilla path it prefers the framework's existing MCP-level `tools/call` middleware or interceptor rather than wrapping every handler. It does not ship a Flowlines runtime SDK or a one-size-fits-all codemod.
 
 ## Privacy notice
 

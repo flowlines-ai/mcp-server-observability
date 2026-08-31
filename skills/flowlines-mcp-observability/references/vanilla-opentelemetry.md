@@ -4,7 +4,16 @@ Use this path for TypeScript and for any language where an official OpenTelemetr
 
 ## Integrate at the execution boundary
 
-Find or create one small adapter around the shared MCP tool dispatcher. The wrapper needs:
+Prefer the framework's existing MCP-level middleware or interceptor around `tools/call` as the default vanilla integration: one adapter, registered once. Typical hooks:
+
+- Go `AddReceivingMiddleware`, filtered to `*mcp.CallToolRequest` only;
+- FastMCP `on_call_tool` (not HTTP/ASGI middleware);
+- official Python `server.middleware` filtered to `tools/call`;
+- TypeScript request/tool middleware, or a single dispatcher wrapper when no MCP-level hook exists.
+
+Do not use HTTP, transport, or sending middleware as the Flowlines MCP span boundary. Those layers may resolve verified user identity; pass that identity in and emit the span at MCP `tools/call`. Do not emit Flowlines MCP spans for `initialize`, `tools/list`, `resources/read`, or other non-`tools/call` methods.
+
+If no MCP-level middleware exists, fall back to one small adapter around the shared MCP tool dispatcher. The middleware or wrapper needs:
 
 - published tool name;
 - validated arguments, including `reason` and `user_intent`;
@@ -13,7 +22,9 @@ Find or create one small adapter around the shared MCP tool dispatcher. The wrap
 - incoming trace context when the transport exposes it;
 - the final `CallToolResult` or equivalent after public error mapping.
 
-The wrapper starts one server span, calls the handler, records the final result, sets status, ends the span in `finally`, and returns the result unchanged. Export failure must never change handler behavior.
+The adapter starts one server span, calls `next()` or the handler, records the final result, sets explicit `OK` or `ERROR` status, ends the span in `finally`, and returns the result unchanged. Do not treat the OpenTelemetry default `UNSET` status as success; Flowlines reports it as unknown. Export failure must never change handler behavior.
+
+If the middleware runs before validation, still wrap `next()` so the span covers the complete execution, but record `gen_ai.tool.call.arguments` from the validated object when available. If middleware cannot see validated args, `_meta`, identity, or the final client-visible result, keep a single dispatcher wrapper and capture the missing fields there. Disable overlapping automatic coverage so each call produces one Flowlines MCP span.
 
 If public error mapping currently happens outside the common dispatcher, move the span boundary outward or make the execution callback return both the client-visible result and an internal `failed` flag. Never attach the caught backend exception to the span.
 
@@ -56,7 +67,7 @@ Resolve identity before entering the telemetry wrapper. Verified authentication/
 
 ## TypeScript shape
 
-With the official OpenTelemetry JavaScript packages, prefer a wrapper shaped like this and adapt it to the target SDK rather than copying it blindly:
+With the official OpenTelemetry JavaScript packages, prefer a wrapper shaped like this and adapt it to the target SDK rather than copying it blindly. Register the helper from MCP-level `tools/call` middleware when the framework has that hook; do not paste it into each tool handler:
 
 ```ts
 import { randomUUID } from "node:crypto";
@@ -193,6 +204,6 @@ Use the target package manager, public package entry points, exact-version rules
 
 ## Tests
 
-Use the language SDK's in-memory exporter and simple processor in unit tests. Assert the semantic contract, not the exact span implementation. Include a call whose request ID is intentionally reused and verify that two executions receive different call IDs. Include spoofed `_meta` user ID/name/email alongside a verified profile and confirm only the verified identity is exported. Include the metadata-only path and confirm it promotes exact `user.id`, `user.name`, and `user.email` attributes without serializing `_meta` into captured arguments.
+Use the language SDK's in-memory exporter and simple processor in unit tests. Assert the semantic contract, not the exact span implementation. Assert that a successful final MCP result has explicit `OK` span status and that a tool or protocol failure has explicit `ERROR` status; no completed test call may remain `UNSET`. Include a call whose request ID is intentionally reused and verify that two executions receive different call IDs. Include spoofed `_meta` user ID/name/email alongside a verified profile and confirm only the verified identity is exported. Include the metadata-only path and confirm it promotes exact `user.id`, `user.name`, and `user.email` attributes without serializing `_meta` into captured arguments.
 
 Test an exception that contains a recognizable secret sentinel, map it to a public MCP error, and confirm the sentinel is absent from all attributes and events. Test shutdown separately with a fake or in-memory exporter; do not contact Flowlines from ordinary CI. During authorized end-to-end verification, save and verify the exact Flowlines user mapping from [contract.md](contract.md).
