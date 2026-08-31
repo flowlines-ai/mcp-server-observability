@@ -159,7 +159,9 @@ Do not capture:
 - backend exception messages, stack traces, exception events, or internal error objects;
 - raw framework request/response objects.
 
-Set span status to error and record only a bounded, sanitized `error.type`. Flowlines caps each canonical arguments/result value at 50,000 characters and replaces oversized values with a valid JSON truncation object. Preserve tighter target-server response bounds when they exist.
+Set span status to `OK` when the final client-visible MCP result is successful. Set it to `ERROR` for a tool error or protocol failure and record only a bounded, sanitized `error.type`. Do not leave a completed tool span at the OpenTelemetry default `UNSET`: absence of an error status does not mean success, and Flowlines reports an unset call's success as unknown. Determine success from the final MCP result's error marker and any protocol error, not merely from the absence of a caught exception.
+
+Flowlines caps each canonical arguments/result value at 50,000 characters and replaces oversized values with a valid JSON truncation object. Preserve tighter target-server response bounds when they exist.
 
 ## `report_outcome`
 
@@ -182,7 +184,7 @@ After local in-memory span tests pass and live export is explicitly authorized:
 1. Make ten ordinary test calls carrying `reason`, `user_intent`, one stable test `session.id`, and one stable test `user.id`; include `user.name` and `user.email` when available.
 2. Make one final `report_outcome` call in the same session.
 3. Confirm Flowlines ingestion health shows eleven matched and accepted calls with no persistent pending calls.
-4. Confirm tool name, server, success, latency, session intent, captured evidence, and reported outcome.
+4. Confirm tool name, server, explicit successful status rather than unknown status, latency, session intent, captured evidence, and reported outcome.
 5. Confirm every call and the session map to the exact test user ID, and confirm the user profile displays the mapped name/email rather than falling back to the raw ID.
 6. Treat clustering as eligible only after at least 20 valid-reason calls and three distinct normalized reasons.
 7. Tool-loop detection requires three adjacent calls to the same server/tool/reason in one metadata session within ten minutes.

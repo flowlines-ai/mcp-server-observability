@@ -58,6 +58,7 @@ The integration must also:
 - resolve a stable user ID for every call, preferring the verified authenticated subject and otherwise requiring `_meta["user.id"]`;
 - set exact `user.id`, plus `user.name` and `user.email` when verified or client-supplied values exist, on the emitted MCP span; verified profile values win;
 - register `report_outcome` with the required final-call description and server instruction;
+- set explicit `OK` status for a successful final MCP result and `ERROR` for a tool or protocol failure; do not accept a completed span left at `UNSET`;
 - map failures to a safe client-visible MCP error without exporting backend exception content;
 - uninstrument or flush during the application's bounded shutdown lifecycle when the SDK exposes that operation.
 
@@ -73,8 +74,9 @@ Add or adapt tests to exercise one complete tool call and inspect exported spans
 - unique invocation and request correlation;
 - explicit session identity and a non-empty stable `user.id`;
 - exact `user.name` and `user.email` when verified profile or client analytics values are available;
+- explicit `OK` or `ERROR` span status, with no completed call left at `UNSET`;
 - validated arguments and final client-visible result.
 
-Also verify that request metadata, authorization values, and raw exceptions are absent, and that a verified profile overrides spoofed client user fields. Configure the Flowlines user mapping exactly as described in [contract.md](contract.md). If automatic instrumentation cannot expose a required field at the server's actual framework boundary, keep Observe for export only if it composes cleanly and add the smallest vanilla OpenTelemetry wrapper at MCP-level `tools/call` middleware or the shared dispatcher described in [vanilla-opentelemetry.md](vanilla-opentelemetry.md). Prefer middleware when the framework has it. Avoid duplicate spans: disable overlapping automatic coverage or make only one layer emit the Flowlines MCP span.
+Also verify that request metadata, authorization values, and raw exceptions are absent, and that a verified profile overrides spoofed client user fields. Configure the Flowlines user mapping exactly as described in [contract.md](contract.md). If automatic instrumentation cannot expose a required field or set explicit completed-call status at the server's actual framework boundary, keep Observe for export only if it composes cleanly and add the smallest vanilla OpenTelemetry wrapper at MCP-level `tools/call` middleware or the shared dispatcher described in [vanilla-opentelemetry.md](vanilla-opentelemetry.md). Prefer middleware when the framework has it. Avoid duplicate spans: disable overlapping automatic coverage or make only one layer emit the Flowlines MCP span.
 
 For a smoke check, importing, instrumenting, and uninstrumenting the installed `mcp` package must complete without error. Full acceptance still requires inspecting a real finished span and, when authorized, confirming receipt in Flowlines.

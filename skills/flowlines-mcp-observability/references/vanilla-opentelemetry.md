@@ -22,7 +22,7 @@ If no MCP-level middleware exists, fall back to one small adapter around the sha
 - incoming trace context when the transport exposes it;
 - the final `CallToolResult` or equivalent after public error mapping.
 
-The adapter starts one server span, calls `next()` or the handler, records the final result, sets status, ends the span in `finally`, and returns the result unchanged. Export failure must never change handler behavior.
+The adapter starts one server span, calls `next()` or the handler, records the final result, sets explicit `OK` or `ERROR` status, ends the span in `finally`, and returns the result unchanged. Do not treat the OpenTelemetry default `UNSET` status as success; Flowlines reports it as unknown. Export failure must never change handler behavior.
 
 If the middleware runs before validation, still wrap `next()` so the span covers the complete execution, but record `gen_ai.tool.call.arguments` from the validated object when available. If middleware cannot see validated args, `_meta`, identity, or the final client-visible result, keep a single dispatcher wrapper and capture the missing fields there. Disable overlapping automatic coverage so each call produces one Flowlines MCP span.
 
@@ -204,6 +204,6 @@ Use the target package manager, public package entry points, exact-version rules
 
 ## Tests
 
-Use the language SDK's in-memory exporter and simple processor in unit tests. Assert the semantic contract, not the exact span implementation. Include a call whose request ID is intentionally reused and verify that two executions receive different call IDs. Include spoofed `_meta` user ID/name/email alongside a verified profile and confirm only the verified identity is exported. Include the metadata-only path and confirm it promotes exact `user.id`, `user.name`, and `user.email` attributes without serializing `_meta` into captured arguments.
+Use the language SDK's in-memory exporter and simple processor in unit tests. Assert the semantic contract, not the exact span implementation. Assert that a successful final MCP result has explicit `OK` span status and that a tool or protocol failure has explicit `ERROR` status; no completed test call may remain `UNSET`. Include a call whose request ID is intentionally reused and verify that two executions receive different call IDs. Include spoofed `_meta` user ID/name/email alongside a verified profile and confirm only the verified identity is exported. Include the metadata-only path and confirm it promotes exact `user.id`, `user.name`, and `user.email` attributes without serializing `_meta` into captured arguments.
 
 Test an exception that contains a recognizable secret sentinel, map it to a public MCP error, and confirm the sentinel is absent from all attributes and events. Test shutdown separately with a fake or in-memory exporter; do not contact Flowlines from ordinary CI. During authorized end-to-end verification, save and verify the exact Flowlines user mapping from [contract.md](contract.md).
